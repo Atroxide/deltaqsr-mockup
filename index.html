@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>deltaQSR Counting Terminal</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontSize: {
+            'xxs': '10px',
+          },
+          boxShadow: {
+            'glow-green': '0 0 8px rgba(34,197,94,0.5)',
+            'glow-orange': '0 0 8px rgba(249,115,22,0.5)',
+            'glow-blue': '0 0 15px rgba(59,130,246,0.3)',
+          },
+          zIndex: {
+            'toast': '9999',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    .hide-scrollbar::-webkit-scrollbar { display: none; }
+    .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    /* Prevent iOS elastic scrolling and Android pull-to-refresh */
+    html, body { overscroll-behavior: none; overscroll-behavior-y: none; }
+    /* Moved from svh to dvh to handle mobile keyboard deployment gracefully */
+    body { background-color: #020617; overflow: hidden; height: 100dvh; }
+  </style>
+</head>
+<body>
+
+  <div class="h-full w-full flex flex-col landscape:flex-row overflow-hidden landscape:pl-[env(safe-area-inset-left)] landscape:pr-[env(safe-area-inset-right)]" id="app">
+    
+    <div class="flex-1 min-h-[150px] landscape:h-full landscape:flex-1 flex flex-col min-w-0 overflow-hidden landscape:border-r-2 landscape:border-slate-800">
+      
+      <div class="h-10 shrink-0 bg-black flex items-center justify-between px-3 border-b border-slate-800">
+        <span class="text-blue-500 font-black tracking-tighter text-xs">deltaQSR</span>
+        
+        <div class="flex items-center gap-3">
+          
+          <div class="flex items-center justify-end gap-1.5 w-44">
+            <span id="save-status-text" class="text-green-500 text-xxs font-bold tracking-widest uppercase truncate text-right">Connected</span>
+            <div id="save-indicator" class="w-2 h-2 shrink-0 rounded-full bg-green-500 transition-colors shadow-glow-green"></div>
+          </div>
+
+          <button aria-label="Menu Options" class="text-slate-400 active:text-white touch-manipulation focus:outline-none focus:ring-2 focus:ring-blue-500 rounded transition-colors p-2 shrink-0">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+          </button>
+          
+        </div>
+      </div>
+
+      <div class="h-12 shrink-0 bg-slate-900 flex items-center justify-between border-b border-slate-800 shadow-lg z-20">
+        <button id="zone-prev-btn" aria-label="Previous Zone" onclick="changeZone(-1)" class="h-full px-5 flex items-center justify-center touch-manipulation active:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 transition-colors"><span class="text-slate-400 text-2xl font-light">‹</span></button>
+        <div id="zone-toggle-btn" aria-label="Toggle Zone/Product View" tabindex="0" onclick="toggleView()" onkeydown="if(event.key==='Enter') toggleView()" class="flex flex-col items-center justify-center leading-tight cursor-pointer touch-manipulation active:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 px-3 py-1 rounded">
+          <span class="text-xxs text-slate-400 uppercase tracking-widest font-bold">Current Zone</span>
+          <h2 id="zone-title" class="text-slate-100 text-sm font-bold underline decoration-blue-500 underline-offset-4">Loading...</h2>
+        </div>
+        <button id="zone-next-btn" aria-label="Next Zone" onclick="changeZone(1)" class="h-full px-5 flex items-center justify-center touch-manipulation active:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 transition-colors"><span class="text-slate-400 text-2xl font-light">›</span></button>
+      </div>
+
+      <div id="reorder-banner" class="hidden shrink-0"></div>
+      
+      <div id="product-list" class="flex-1 overflow-y-auto w-full px-2 mt-1 gap-1 flex flex-col pb-4 touch-pan-y"></div>
+    </div>
+
+    <div class="shrink-0 min-h-[350px] landscape:h-full landscape:min-h-0 landscape:w-[45%] flex flex-col bg-slate-900 border-t-2 landscape:border-t-0 landscape:border-l-2 border-slate-700 pb-[env(safe-area-inset-bottom)] landscape:pb-0">
+      
+      <div id="uom-bar" class="shrink-0 flex items-center gap-2 px-2 py-2 overflow-x-auto whitespace-nowrap hide-scrollbar border-b border-slate-800 min-h-[72px]"></div>
+      
+      <div class="flex-1 grid grid-cols-4 grid-rows-5 gap-[2px] bg-slate-800 p-[2px]">
+        <button aria-label="Open Parenthesis" onclick="numpad('(')" class="numpad-btn bg-slate-900 text-blue-400 h-full touch-manipulation active:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 text-2xl font-bold">(</button>
+        <button aria-label="Close Parenthesis" onclick="numpad(')')" class="numpad-btn bg-slate-900 text-blue-400 h-full touch-manipulation active:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 text-2xl font-bold">)</button>
+        <button aria-label="Delete" onpointerdown="handleDelDown(event)" onpointerup="handleDelUp(event)" onpointercancel="handleDelCancel()" onpointerleave="handleDelCancel()" class="numpad-btn bg-slate-900 text-red-500 font-black h-full touch-manipulation active:bg-red-900/60 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 select-none text-xl">DEL</button>
+        <button aria-label="Divide" onclick="numpad('/')" class="numpad-btn bg-slate-900 text-blue-400 h-full touch-manipulation active:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 text-3xl font-bold">/</button>
+        
+        <button aria-label="7" onclick="numpad('7')" class="numpad-btn bg-slate-900 text-slate-100 h-full touch-manipulation active:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 text-3xl font-bold">7</button>
+        <button aria-label="8" onclick="numpad('8')" class="numpad-btn bg-slate-900 text-slate-100 h-full touch-manipulation active:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 text-3xl font-bold">8</button>
+        <button aria-label="9" onclick="numpad('9')" class="numpad-btn bg-slate-900 text-slate-100 h-full touch-manipulation active:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 text-3xl font-bold">9</button>
+        <button aria-label="Multiply" onclick="numpad('*')" class="numpad-btn bg-slate-900 text-blue-400 h-full touch-manipulation active:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 text-3xl font-bold">*</button>
+        
+        <button aria-label="4" onclick="numpad('4')" class="numpad-btn bg-slate-900 text-slate-100 h-full touch-manipulation active:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 text-3xl font-bold">4</button>
+        <button aria-label="5" onclick="numpad('5')" class="numpad-btn bg-slate-900 text-slate-100 h-full touch-manipulation active:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 text-3xl font-bold">5</button>
+        <button aria-label="6" onclick="numpad('6')" class="numpad-btn bg-slate-900 text-slate-100 h-full touch-manipulation active:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 text-3xl font-bold">6</button>
+        <button aria-label="Subtract" onclick="numpad('-')" class="numpad-btn bg-slate-900 text-blue-400 h-full touch-manipulation active:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 text-3xl font-bold">-</button>
+        
+        <button aria-label="1" onclick="numpad('1')" class="numpad-btn bg-slate-900 text-slate-100 h-full touch-manipulation active:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 text-3xl font-bold">1</button>
+        <button aria-label="2" onclick="numpad('2')" class="numpad-btn bg-slate-900 text-slate-100 h-full touch-manipulation active:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 text-3xl font-bold">2</button>
+        <button aria-label="3" onclick="numpad('3')" class="numpad-btn bg-slate-900 text-slate-100 h-full touch-manipulation active:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 text-3xl font-bold">3</button>
+        <button aria-label="Add" onclick="numpad('+')" class="numpad-btn bg-slate-900 text-blue-400 h-full touch-manipulation active:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 text-3xl font-bold">+</button>
+        
+        <button aria-label="0" onclick="numpad('0')" class="numpad-btn bg-slate-900 text-slate-100 h-full touch-manipulation active:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 text-3xl font-bold">0</button>
+        <button aria-label="Decimal point" onclick="numpad('.')" class="numpad-btn bg-slate-900 text-slate-100 h-full touch-manipulation active:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 text-3xl font-bold">.</button>
+        <button id="enter-btn" aria-label="Enter" onclick="commitValue()" class="col-span-2 bg-blue-600 text-white font-black h-full touch-manipulation active:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-300 transition-opacity text-2xl tracking-widest">ENTER</button>
+      </div>
+    </div>
+
+  </div>
+
+  <div id="overlay-root"></div>
+
+  <script>
+    let activeSyncTimeouts = [];
+    let isSyncLocked = false; 
+
+    function updateStatusUI(status) {
+        const dot = document.getElementById('save-indicator');
+        const txt = document.getElementById('save-status-text');
+        if (!dot || !txt) return;
+        
+        if (status === 'connected') {
+            dot.className = 'w-2 h-2 shrink-0 rounded-full transition-colors bg-green-500 shadow-glow-green';
+            txt.className = 'text-green-500 text-xxs font-bold tracking-widest uppercase transition-colors truncate text-right';
+            txt.innerText = 'Connected';
+        } else if (status === 'syncing') {
+            dot.className = 'w-2 h-2 shrink-0 rounded-full transition-colors bg-green-500 shadow-glow-green';
+            txt.className = 'text-green-500 text-xxs font-bold tracking-widest uppercase transition-colors truncate text-right';
+            txt.innerText = 'Syncing';
+        } else if (status === 'pending') {
+            dot.className = 'w-2 h-2 shrink-0 rounded-full transition-colors bg-orange-500 shadow-glow-orange';
+            txt.className = 'text-orange-500 text-xxs font-bold tracking-widest uppercase transition-colors truncate text-right';
+            txt.innerText = 'Waiting for Connection';
+        }
+    }
+
+    function triggerMockSync() {
+        if (isSyncLocked) return;
+
+        activeSyncTimeouts.forEach(clearTimeout);
+        activeSyncTimeouts = [];
+
+        const isPending = Math.random() < 0.10; 
+        const pingMs = Math.floor(Math.random() * 250) + 50; 
+
+        if (isPending) {
+            isSyncLocked = true; 
+            const pendingMs = Math.floor(Math.random() * 4000) + 1000; 
+            
+            updateStatusUI('pending');
+            
+            const t1 = setTimeout(() => {
+                updateStatusUI('syncing');
+                const t2 = setTimeout(() => {
+                    updateStatusUI('connected');
+                    isSyncLocked = false;
+                }, pingMs);
+                activeSyncTimeouts.push(t2);
+            }, pendingMs);
+            
+            activeSyncTimeouts.push(t1);
+
+        } else {
+            updateStatusUI('syncing');
+            const t1 = setTimeout(() => {
+                updateStatusUI('connected');
+            }, pingMs);
+            activeSyncTimeouts.push(t1);
+        }
+    }
+
+    const mockDatabase = [
+      { name: "Avocados", uoms: [{n:"Cases", desc:"( 48 count )", v:null, hidden: false}, {n:"Each", desc:"", v:null, hidden: false}] },
+      { name: "Bacon", uoms: [{n:"Cases", desc:"( 15LB )", v:null, hidden: false}, {n:"Packs", desc:"( 1LB )", v:null, hidden: false}] },
+      { name: "Cheddar Slices", uoms: [{n:"Cases", desc:"( 4 / 2.5LB )", v:null, hidden: false}] },
+      { name: "Hamburger Buns", uoms: [{n:"Cases", desc:"( 12 / 8pk )", v:null, hidden: false}, {n:"Packs", desc:"( 8ea )", v:null, hidden: false}] },
+      { name: "Mustard", uoms: [{n:"Cases", desc:"( 4 / 1gal )", v:null, hidden: false}, {n:"Jugs", desc:"", v:null, hidden: false}] },
+      { name: "Onions", uoms: [{n:"Bags", desc:"( 50LB )", v:null, hidden: false}] },
+      { name: "Tomatoes (Diced)", uoms: [{n:"Cases", desc:"( 6 / #10 )", v:null, hidden: false}] },
+      { name: "Bleu Cheese", uoms: [{n:"Cases", desc:"( 4 / 5LB )", v:null, hidden: false}, {n:"Tubs", desc:"( 5LB )", v:null, hidden: false}] }
+    ];
+
+    let state = {
+      viewMode: 'products',
+      currentZoneIndex: 0,
+      activeProductId: 101,
+      tempInput: "",
+      contextMenu: null,
+      reorder: null,
+      promptModal: null,   
+      uomManager: false,
+      ingredientSearch: null,
+      data: [
+        {
+          zoneName: "Front Line - Dry",
+          products: [
+            { 
+              id: 101, 
+              name: "Paper Cups (16oz)", 
+              selectedUom: 0,
+              uoms: [
+                {n:"Cases", desc:"( 4 / 10 )", v:null, hidden: false, vendorItem: "4 Packs of 10 Sleeves", lastOrderDays: 2},
+                {n:"Packs", desc:"( 4 / 10 )", v:null, hidden: false, vendorItem: "4 Packs of 10 Sleeves", lastOrderDays: 2},
+                {n:"Sleeves", desc:"( 4 / 10 )", v:null, hidden: true, vendorItem: "4 Packs of 10 Sleeves", lastOrderDays: 2},
+                {n:"Cases", desc:"( 1000ea )", v:null, hidden: true, vendorItem: "1000 Count Bulk Box", lastOrderDays: 15},
+                {n:"Boxes", desc:"( 100ea )", v:null, hidden: true, vendorItem: "1000 Count Bulk Box", lastOrderDays: 15},
+                {n:"Sleeves", desc:"( 50ea )", v:null, hidden: false, vendorItem: "50 Count Sleeve", lastOrderDays: 45},
+                {n:"Bags", desc:"( 10ea )", v:null, hidden: false, vendorItem: "50 Count Sleeve", lastOrderDays: 45}
+              ] 
+            },
+            { id: 102, name: "Napkins", uoms: [{n:"Cases", desc:"", v:null}], selectedUom: 0 },
+            { id: 103, name: "Straws", uoms: [{n:"Cases", desc:"( 20 / 500ea )", v:null}, {n:"Boxes", desc:"( 500ea )", v:null}], selectedUom: 0 },
+            { id: 104, name: "Lids (16oz)", uoms: [{n:"Cases", desc:"( 10 / 100ea )", v:null}], selectedUom: 0 },
+            { id: 105, name: "To-Go Bags (Small)", uoms: [{n:"Cases", desc:"", v:null}, {n:"Bundles", desc:"( 25ea )", v:null}], selectedUom: 0 },
+            { id: 106, name: "To-Go Bags (Large)", uoms: [{n:"Cases", desc:"", v:null}], selectedUom: 0 },
+            { id: 107, name: "Condiment Cups", uoms: [{n:"Cases", desc:"", v:null}, {n:"Sleeves", desc:"( 100ea )", v:null}], selectedUom: 0 },
+            { id: 108, name: "Plastic Cutlery Sets", uoms: [{n:"Cases", desc:"( 250ea )", v:null}], selectedUom: 0 },
+            { id: 109, name: "Coffee Filters", uoms: [{n:"Cases", desc:"", v:null}], selectedUom: 0 },
+            { id: 110, name: "Sanitizer Wipes", uoms: [{n:"Cases", desc:"", v:null}, {n:"Buckets", desc:"", v:null}], selectedUom: 0 }
+          ]
+        },
+        {
+          zoneName: "Walk-In Cooler",
+          products: [
+            { id: 201, name: "Lettuce (Iceberg)", uoms: [{n:"Cases", desc:"( 24 heads )", v:null}, {n:"Heads", desc:"", v:null}], selectedUom: 0 },
+            { id: 202, name: "Tomatoes", uoms: [{n:"Cases", desc:"( 25LB )", v:null}, {n:"Lbs", desc:"", v:null}], selectedUom: 0 },
+            { id: 203, name: "Shredded Cheese", uoms: [{n:"Cases", desc:"( 4 / 5LB )", v:null}, {n:"Bags", desc:"( 5LB )", v:null}], selectedUom: 0 },
+            { id: 204, name: "Milk (Whole)", uoms: [{n:"Cases", desc:"( 4 / 1gal )", v:null}, {n:"Gallons", desc:"", v:null}], selectedUom: 0 }
+          ]
+        }
+      ]
+    };
+
+    function setActiveProduct(zoneIndex, productId) {
+        saveCurrentInput(); 
+        const zone = state.data[zoneIndex];
+        const prod = productId ? zone.products.find(p => p.id === productId) : null;
+        
+        if (prod) {
+            const firstVis = prod.uoms.findIndex(u => !u.hidden);
+            prod.selectedUom = firstVis !== -1 ? firstVis : 0;
+            state.activeProductId = productId;
+        } else {
+            state.activeProductId = null;
+        }
+        
+        state.currentZoneIndex = zoneIndex;
+        state.tempInput = "";
+    }
+
+    function toggleView() {
+        if (state.reorder) return;
+        if (!isValidExpression(state.tempInput)) return;
+        state.viewMode = state.viewMode === 'products' ? 'zones' : 'products';
+        render();
+    }
+
+    function changeZone(delta) {
+        if (state.reorder || !isValidExpression(state.tempInput)) return;
+        state.currentZoneIndex = (state.currentZoneIndex + delta + state.data.length) % state.data.length;
+        const newZone = state.data[state.currentZoneIndex];
+        setActiveProduct(state.currentZoneIndex, newZone.products.length ? newZone.products[0].id : null);
+        state.viewMode = 'products';
+        render();
+        scrollToTop();
+        centerActiveUom();
+    }
+
+    function selectZone(index) {
+        if (!isValidExpression(state.tempInput)) return;
+        const zone = state.data[index];
+        setActiveProduct(index, zone.products.length ? zone.products[0].id : null);
+        state.viewMode = 'products';
+        render();
+        scrollToTop();
+        centerActiveUom();
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    function render() {
+      const zone = state.data[state.currentZoneIndex];
+      document.getElementById('zone-title').innerText = zone.zoneName;
+      const list = document.getElementById('product-list');
+      const banner = document.getElementById('reorder-banner');
+      const valid = isValidExpression(state.tempInput);
+
+      const navDisabled = state.reorder || !valid;
+      ['zone-prev-btn', 'zone-next-btn', 'zone-toggle-btn'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.classList.toggle('opacity-30', navDisabled);
+        el.classList.toggle('pointer-events-none', navDisabled);
+      });
+
+      if (state.reorder) {
+        banner.classList.remove('hidden');
+        banner.innerHTML = `
+          <div class="flex items-center justify-between px-3 py-2 bg-blue-950/60 border-b border-blue-900">
+            <span class="text-blue-300 text-xs font-bold uppercase tracking-wider">Drag ⠿ to Reorder</span>
+            <button onclick="exitReorder()" class="text-blue-400 font-bold text-sm px-3 py-1.5 touch-manipulation bg-blue-900/60 rounded active:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-400">Done</button>
+          </div>`;
+      } else {
+        banner.classList.add('hidden');
+        banner.innerHTML = '';
+      }
+
+      if (state.viewMode === 'zones') {
+          if (state.reorder === 'zone') {
+            list.innerHTML = state.data.map((z, i) => `
+              <div data-row class="flex items-center justify-between p-3 bg-slate-800 m-1 rounded-lg text-white font-bold border border-slate-700 select-none touch-pan-y">
+                <span class="text-sm">${escapeHtml(z.zoneName)}</span>
+                <span onpointerdown="startDrag(event,'zone',${i})" style="touch-action:none;" class="text-slate-400 text-2xl px-4 py-4 -my-4 cursor-grab active:cursor-grabbing active:text-blue-400">⠿</span>
+              </div>
+            `).join('');
+          } else {
+            list.innerHTML = state.data.map((z, i) => `
+              <div data-row onpointerdown="handlePointerDown(event,'zone',${i})" onpointermove="handlePointerMoveCheck(event)" onpointerup="handlePointerUp(event,'zone',${i})" onpointercancel="handlePointerCancel()" class="p-3 bg-slate-800 m-1 rounded-lg text-white text-sm font-bold border border-slate-700 cursor-pointer active:bg-blue-600 select-none transition-opacity touch-pan-y ${!valid ? 'opacity-30 pointer-events-none' : ''}">
+                  ${escapeHtml(z.zoneName)}
+              </div>
+            `).join('');
+          }
+          document.getElementById('uom-bar').innerHTML = '';
+      } else {
+          if (state.reorder === 'product') {
+            list.innerHTML = zone.products.map((p, i) => `
+              <div data-row class="flex items-center justify-between px-3 min-h-[52px] shrink-0 rounded-lg border border-slate-800 bg-slate-900/30 select-none touch-pan-y">
+                <span class="text-slate-200 text-sm font-bold">${escapeHtml(p.name)}</span>
+                <span onpointerdown="startDrag(event,'product',${i})" style="touch-action:none;" class="text-slate-400 text-2xl px-4 py-4 -my-4 cursor-grab active:cursor-grabbing active:text-blue-400">⠿</span>
+              </div>
+            `).join('');
+            document.getElementById('uom-bar').innerHTML = "";
+          } else {
+            let productHtml = zone.products.map((p, i) => `
+              <div data-row ${state.activeProductId === p.id ? 'id="active-product"' : ''} onpointerdown="handlePointerDown(event,'product',${i})" onpointermove="handlePointerMoveCheck(event)" onpointerup="handlePointerUp(event,'product',${i})" onpointercancel="handlePointerCancel()" class="flex items-center justify-between gap-2 px-3 min-h-[52px] shrink-0 rounded-lg border cursor-pointer transition-colors select-none touch-pan-y ${state.activeProductId === p.id ? 'sticky top-0 bottom-0 z-30 bg-slate-800 border-blue-500 shadow-glow-blue' : 'bg-slate-900/30 border-slate-800 active:bg-slate-800'} ${!valid && state.activeProductId !== p.id ? 'opacity-30 pointer-events-none' : ''}">
+                <span class="${state.activeProductId === p.id ? 'text-white' : 'text-slate-400'} font-bold shrink-0 text-sm">${escapeHtml(p.name)}</span>
+                <span class="text-slate-400 text-xs font-mono text-right truncate min-w-0 pl-4">${escapeHtml(p.uoms.filter(u => u.v !== null && !u.hidden).map(u => `${u.v} ${u.n}`).join(', '))}</span>
+              </div>
+            `).join('');
+
+            productHtml += `
+              <button aria-label="Add Ingredient" onclick="openIngredientSearch(${zone.products.length})" class="flex items-center justify-center touch-manipulation gap-2 px-3 min-h-[48px] shrink-0 rounded-lg border-2 border-dashed border-slate-700 bg-slate-900/50 select-none mt-2 mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${!valid ? 'opacity-30 pointer-events-none text-slate-600' : 'cursor-pointer text-slate-400 active:text-blue-400 active:border-blue-500 active:bg-slate-800'}">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                <span class="font-bold tracking-wider text-xs uppercase">Add Ingredient</span>
+              </button>
+            `;
+            list.innerHTML = productHtml;
+
+            const activeProd = zone.products.find(p => p.id === state.activeProductId);
+            
+            if (activeProd) {
+                const visibleUoms = activeProd.uoms.map((u, idx) => ({ ...u, originalIdx: idx })).filter(u => !u.hidden);
+                
+                document.getElementById('uom-bar').innerHTML = visibleUoms.map((u) => `
+                  <button aria-label="Select Unit ${escapeHtml(u.n)}" ${activeProd.selectedUom === u.originalIdx ? 'id="active-uom"' : ''} onclick="selectUom(${u.originalIdx})" class="flex flex-col items-center touch-manipulation justify-center min-h-[60px] min-w-[100px] focus:outline-none focus:ring-2 focus:ring-blue-400 ${activeProd.selectedUom === u.originalIdx ? 'bg-black border-2 border-blue-400' : 'bg-slate-800 border border-slate-600'} rounded px-2 py-1 active:bg-slate-700 transition-colors ${!valid && activeProd.selectedUom !== u.originalIdx ? 'opacity-30 pointer-events-none' : ''}">
+                    <div class="flex flex-col items-center justify-center mb-0.5">
+                      <span class="${activeProd.selectedUom === u.originalIdx ? 'text-blue-400' : 'text-slate-200'} text-xs uppercase tracking-wider font-bold leading-none">${escapeHtml(u.n)}</span>
+                      ${u.desc ? `<span class="${activeProd.selectedUom === u.originalIdx ? 'text-blue-500/80' : 'text-slate-400'} text-[10px] mt-1 leading-none font-medium">${escapeHtml(u.desc)}</span>` : ''}
+                    </div>
+                    <span class="${activeProd.selectedUom === u.originalIdx ? 'text-white' : 'text-slate-100'} text-lg font-bold font-mono leading-none mt-1">${activeProd.selectedUom === u.originalIdx && state.tempInput ? state.tempInput : (u.v === null ? '—' : u.v)}</span>
+                  </button>
+                `).join('') + `
+                  <button aria-label="Manage Units of Measure" onclick="openUomManager()" class="flex items-center justify-center touch-manipulation min-h-[60px] min-w-[48px] bg-slate-800 border border-slate-700 border-dashed rounded shrink-0 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${!valid ? 'opacity-30 pointer-events-none text-slate-600' : 'text-slate-400 active:text-blue-400 active:bg-slate-700'}">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                  </button>`;
+            } else {
+                document.getElementById('uom-bar').innerHTML = `<div class="flex items-center justify-center w-full h-full text-slate-400 font-bold text-xs uppercase tracking-widest">Zone Empty</div>`;
+            }
+          }
+      }
+
+      const numpadGrid = document.querySelector('.grid.grid-cols-4.grid-rows-5');
+      if (numpadGrid) {
+          const activeProd = state.viewMode === 'products' ? state.data[state.currentZoneIndex].products.find(p => p.id === state.activeProductId) : null;
+          const disableNumpad = state.reorder || (state.viewMode === 'products' && !activeProd);
+          
+          numpadGrid.classList.toggle('opacity-30', disableNumpad);
+          numpadGrid.classList.toggle('pointer-events-none', disableNumpad);
+      }
+
+      renderOverlay();
+    }
+
+    function renderOverlay() {
+      const root = document.getElementById('overlay-root');
+      let html = '';
+      
+      if (state.contextMenu) {
+        const { kind, index } = state.contextMenu;
+        let menuItems = '';
+
+        if (kind === 'zone') {
+          menuItems = `
+            <button aria-label="Reorder Zones" onclick="startReorder('zone')" class="w-full text-left touch-manipulation px-5 py-4 text-slate-200 active:bg-slate-700 focus:bg-slate-700 focus:outline-none font-bold border-b border-slate-700">Reorder Zones</button>
+            <button aria-label="Add Zone Before" onclick="addZone('before', ${index})" class="w-full text-left touch-manipulation px-5 py-4 text-slate-200 active:bg-slate-700 focus:bg-slate-700 focus:outline-none font-bold border-b border-slate-700">Add Zone Before</button>
+            <button aria-label="Add Zone After" onclick="addZone('after', ${index})" class="w-full text-left touch-manipulation px-5 py-4 text-slate-200 active:bg-slate-700 focus:bg-slate-700 focus:outline-none font-bold">Add Zone After</button>
+          `;
+        } else if (kind === 'product') {
+          menuItems = `
+            <button aria-label="Reorder Items" onclick="startReorder('product')" class="w-full text-left touch-manipulation px-5 py-4 text-slate-200 active:bg-slate-700 focus:bg-slate-700 focus:outline-none font-bold border-b border-slate-700">Reorder Items</button>
+            <button aria-label="Move to Zone" onclick="openChangeZoneMenu(${index})" class="w-full text-left touch-manipulation px-5 py-4 text-slate-200 active:bg-slate-700 focus:bg-slate-700 focus:outline-none font-bold border-b border-slate-700">Move to Zone...</button>
+            <button aria-label="Add Item Before" onclick="addProduct('before', ${index})" class="w-full text-left touch-manipulation px-5 py-4 text-slate-200 active:bg-slate-700 focus:bg-slate-700 focus:outline-none font-bold border-b border-slate-700">Add Item Before</button>
+            <button aria-label="Add Item After" onclick="addProduct('after', ${index})" class="w-full text-left touch-manipulation px-5 py-4 text-slate-200 active:bg-slate-700 focus:bg-slate-700 focus:outline-none font-bold">Add Item After</button>
+          `;
+        } else if (kind === 'changeZone') {
+          menuItems = state.data.map((z, i) => `
+            <button aria-label="Move to ${escapeHtml(z.zoneName)}" onclick="moveProductToZone(${index}, ${i})" class="w-full text-left touch-manipulation px-5 py-4 text-slate-200 active:bg-slate-700 focus:bg-slate-700 focus:outline-none font-bold ${i < state.data.length - 1 ? 'border-b border-slate-700' : ''}">${escapeHtml(z.zoneName)}</button>
+          `).join('');
+        }
+
+        html = `
+          <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4" onclick="closeContextMenu()">
+            <div class="w-full max-w-sm bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow-2xl flex flex-col" onclick="event.stopPropagation()">
+              <div class="bg-slate-900 px-5 py-3 border-b border-slate-700 flex justify-between items-center">
+                <span class="text-white font-bold">${kind === 'changeZone' ? 'Select Destination' : 'Options'}</span>
+                <button aria-label="Close" onclick="closeContextMenu()" class="text-slate-400 active:text-white touch-manipulation p-2 -mr-2 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 rounded"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+              </div>
+              <div class="flex flex-col max-h-[60vh] overflow-y-auto">
+                ${menuItems}
+              </div>
+            </div>
+          </div>
+        `;
+
+      } else if (state.ingredientSearch) {
+        html = `
+          <div class="fixed inset-0 z-50 flex flex-col bg-slate-900" onclick="closeIngredientSearch()">
+            <div class="shrink-0 p-3 pt-[max(12px,env(safe-area-inset-top))] bg-slate-950 border-b border-slate-800 flex items-center gap-3" onclick="event.stopPropagation()">
+              <button aria-label="Close Search" onclick="closeIngredientSearch()" class="text-slate-400 active:text-white touch-manipulation shrink-0 p-2 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+              </button>
+              <div class="flex-1 relative">
+                <input type="text" id="ingredient-search-input" oninput="handleSearchInput(this.value)" class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2.5 pl-10 text-white font-bold text-base focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Search database..." autocomplete="off" />
+                <svg class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+              </div>
+            </div>
+            <div id="search-results-container" class="flex-1 overflow-y-auto hide-scrollbar bg-slate-900 pb-10 touch-pan-y" onclick="event.stopPropagation()">
+            </div>
+          </div>
+        `;
+
+        setTimeout(() => { 
+            window.handleSearchInput(''); 
+            const input = document.getElementById('ingredient-search-input');
+            if (input) input.focus();
+        }, 30);
+
+      } else if (state.promptModal) {
+        const p = state.promptModal;
+        html = `
+          <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4" onclick="closePrompt()">
+            <div class="w-full max-w-sm bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow-2xl flex flex-col" onclick="event.stopPropagation()">
+              <div class="bg-slate-900 px-5 py-3 border-b border-slate-700">
+                <span class="text-white font-bold text-base">${escapeHtml(p.title)}</span>
+              </div>
+              <div class="p-4 flex flex-col gap-4">
+                <input type="text" id="prompt-input" class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-white font-bold text-base focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="${escapeHtml(p.placeholder)}" value="${escapeHtml(p.value)}" onkeydown="if(event.key==='Enter') confirmPrompt()" />
+                <div class="flex gap-3 justify-end">
+                  <button aria-label="Cancel" onclick="closePrompt()" class="px-4 py-2 touch-manipulation text-slate-300 text-sm font-bold active:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500 rounded">Cancel</button>
+                  <button aria-label="Save" onclick="confirmPrompt()" class="px-4 py-2 touch-manipulation bg-blue-600 text-white text-sm font-bold active:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 rounded">Save</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+
+      } else if (state.uomManager) {
+        const prod = state.data[state.currentZoneIndex].products.find(p => p.id === state.activeProductId);
+        if (!prod) return; 
+
+        const groups = {};
+        prod.uoms.forEach((u, idx) => {
+          const vName = u.vendorItem || 'Uncategorized Packaging';
+          if (!groups[vName]) groups[vName] = { vendorItem: vName, days: u.lastOrderDays || 0, uoms: [] };
+          groups[vName].uoms.push({ ...u, originalIdx: idx });
+        });
+        
+        const sortedGroups = Object.values(groups).sort((a, b) => a.days - b.days);
+        const groupsHtml = sortedGroups.map(g => `
+          <div class="bg-slate-800 rounded-lg overflow-hidden border border-slate-700 flex flex-col shrink-0 w-full landscape:w-[320px] landscape:max-h-full">
+            <div class="px-3 py-2 bg-slate-900 border-b border-slate-700 flex justify-between items-center shrink-0">
+              <span class="text-slate-200 text-sm font-bold truncate pr-2">${escapeHtml(g.vendorItem)}</span>
+              <span class="text-slate-400 text-xxs uppercase tracking-wider font-bold shrink-0">Ordered ${g.days}d ago</span>
+            </div>
+            <div class="flex flex-col overflow-y-auto hide-scrollbar touch-pan-y">
+              ${g.uoms.map(u => {
+                const hasCount = u.v !== null && u.v !== "" && Number(u.v) !== 0;
+                return `
+                <div class="flex items-center justify-between px-3 py-2.5 border-b border-slate-700/50 last:border-b-0">
+                  <div class="flex flex-col">
+                    <span class="text-slate-200 font-bold text-sm">${escapeHtml(u.n)}</span>
+                    ${u.desc ? `<span class="text-slate-400 text-xs mt-0.5">${escapeHtml(u.desc)}</span>` : ''}
+                  </div>
+                  <button aria-label="Toggle Visibility for ${escapeHtml(u.n)}" onclick="toggleUomVisibility(${u.originalIdx})" class="${hasCount && !u.hidden ? 'opacity-30 cursor-not-allowed' : 'touch-manipulation active:scale-95 transition-transform focus:outline-none focus:ring-2 focus:ring-blue-500 rounded'} p-2 -mr-1">
+                    ${u.hidden 
+                      ? `<svg class="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"></path></svg>` 
+                      : `<svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.543 7-1.275 4.057-5.065 7-9.543 7-4.477 0-8.268-2.943-9.543-7z"></path></svg>`}
+                  </button>
+                </div>
+              `}).join('')}
+            </div>
+          </div>
+        `).join('');
+
+        html = `
+          <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-2 sm:px-6 py-4 sm:py-10 landscape:p-2" onclick="closeUomManager()">
+            <div class="w-full h-full max-w-xl landscape:max-w-4xl bg-slate-900 border border-slate-700 rounded-xl overflow-hidden flex flex-col shadow-2xl" onclick="event.stopPropagation()">
+              <div class="shrink-0 px-4 py-3 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+                <div class="text-slate-100 font-bold text-lg truncate pr-4">Manage UOMs - ${escapeHtml(prod.name)}</div>
+                <button aria-label="Close Manager" onclick="closeUomManager()" class="text-slate-400 active:text-white touch-manipulation p-2 shrink-0 bg-slate-800 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+              </div>
+              <div class="flex-1 overflow-y-auto landscape:overflow-y-hidden landscape:overflow-x-auto p-4 hide-scrollbar flex flex-col landscape:flex-row gap-4 items-start touch-pan-y">
+                ${groupsHtml}
+              </div>
+            </div>
+          </div>`;
+      }
+      
+      root.innerHTML = html;
+    }
+
+    function isValidExpression(str) {
+      if (str.trim() === "") return true;
+      if (!/^[0-9+\-*/().\s]+$/.test(str)) return false;
+      try {
+        const result = Function('"use strict"; return (' + str + ')')();
+        return typeof result === 'number' && isFinite(result);
+      } catch (e) {
+        return false;
+      }
+    }
+    function evalExpression(str) {
+      return Function('"use strict"; return (' + str + ')')();
+    }
+
+    function numpad(key) {
+        if (state.reorder) return;
+        const zone = state.data[state.currentZoneIndex];
+        const prod = zone.products.find(p => p.id === state.activeProductId);
+        if (!prod) return; 
+
+        const currentUom = prod.uoms[prod.selectedUom];
+        const isOperator = ['.', '+', '-', '*', '/'].includes(key);
+        if (state.tempInput === "" && isOperator && currentUom.v !== null) {
+            state.tempInput = String(currentUom.v);
+        }
+        state.tempInput += key;
+        render();
+    }
+
+    const DEL_LONG_PRESS_MS = 500;
+    let delTimer = null;
+    let delLongFired = false;
+    function handleDelDown(e) {
+      if (state.reorder) return;
+      delLongFired = false;
+      delTimer = setTimeout(() => {
+        delLongFired = true;
+        state.tempInput = "";
+        const prod = state.data[state.currentZoneIndex].products.find(p => p.id === state.activeProductId);
+        if (prod) prod.uoms[prod.selectedUom].v = null;
+        if (navigator.vibrate) navigator.vibrate(10);
+        render();
+      }, DEL_LONG_PRESS_MS);
+    }
+    function handleDelUp(e) {
+      if (state.reorder) return;
+      clearTimeout(delTimer);
+      if (!delLongFired) {
+        if (state.tempInput.length > 0) {
+          state.tempInput = state.tempInput.slice(0, -1);
+        } else {
+          const prod = state.data[state.currentZoneIndex].products.find(p => p.id === state.activeProductId);
+          if (prod) prod.uoms[prod.selectedUom].v = null;
+        }
+        render();
+      }
+    }
+    function handleDelCancel() {
+      clearTimeout(delTimer);
+    }
+    function roundTo3(num) {
+      return Math.round((num + Number.EPSILON) * 1000) / 1000;
+    }
+    function saveCurrentInput() {
+        if (state.tempInput.trim() === "") return;
+        if (!isValidExpression(state.tempInput)) return;
+        
+        const zone = state.data[state.currentZoneIndex];
+        const prod = zone.products.find(p => p.id === state.activeProductId);
+        
+        if (prod && prod.uoms[prod.selectedUom]) {
+            prod.uoms[prod.selectedUom].v = roundTo3(evalExpression(state.tempInput)).toString();
+            triggerMockSync(); 
+        }
+    }
+
+    function commitValue() {
+        if (state.reorder || !isValidExpression(state.tempInput)) return;
+        saveCurrentInput();
+        state.tempInput = "";
+
+        const zone = state.data[state.currentZoneIndex];
+        const prod = zone.products.find(p => p.id === state.activeProductId);
+
+        if (!prod) { 
+            changeZone(1);
+            return;
+        }
+
+        const nextVis = prod.uoms.findIndex((u, idx) => idx > prod.selectedUom && !u.hidden);
+        if (nextVis !== -1) {
+            prod.selectedUom = nextVis;
+            render();
+            centerActiveUom();
+        } else {
+            const prodIdx = zone.products.findIndex(p => p.id === prod.id);
+            if (prodIdx < zone.products.length - 1) {
+                setActiveProduct(state.currentZoneIndex, zone.products[prodIdx + 1].id);
+                render();
+                centerActiveProduct();
+                centerActiveUom();
+            } else {
+                changeZone(1); 
+            }
+        }
+    }
+
+    function openUomManager() {
+        if (!isValidExpression(state.tempInput)) return;
+        state.uomManager = true;
+        render();
+    }
+
+    function closeUomManager() {
+        state.uomManager = false;
+        const prod = state.data[state.currentZoneIndex].products.find(p => p.id === state.activeProductId);
+        if (prod.uoms[prod.selectedUom] && prod.uoms[prod.selectedUom].hidden) {
+            const firstVis = prod.uoms.findIndex(u => !u.hidden);
+            prod.selectedUom = firstVis !== -1 ? firstVis : 0;
+            state.tempInput = "";
+        }
+        render();
+        centerActiveUom();
+    }
+
+    function showToast(message) {
+        const toast = document.createElement('div');
+        toast.className = "fixed bottom-10 left-1/2 -translate-x-1/2 bg-red-600 text-white px-5 py-3 rounded-lg shadow-2xl z-toast font-bold text-base transition-opacity duration-300 opacity-0 pointer-events-none";
+        toast.innerText = message;
+        document.body.appendChild(toast);
+        
+        requestAnimationFrame(() => toast.classList.remove('opacity-0'));
+        setTimeout(() => {
+            toast.classList.add('opacity-0');
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
+    }
+
+    function toggleUomVisibility(idx) {
+        const prod = state.data[state.currentZoneIndex].products.find(p => p.id === state.activeProductId);
+        const u = prod.uoms[idx];
+        
+        const hasCount = u.v !== null && u.v !== "" && Number(u.v) !== 0;
+        if (!u.hidden && hasCount) {
+            showToast("Cannot hide a UOM with an active count.");
+            return;
+        }
+        
+        u.hidden = !u.hidden;
+        render();
+    }
+
+    function centerActiveProduct() {
+        setTimeout(() => {
+            const activeEl = document.getElementById('active-product');
+            if (activeEl) {
+                activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }, 10);
+    }
+
+    function centerActiveUom() {
+        setTimeout(() => {
+            const bar = document.getElementById('uom-bar');
+            const activeEl = document.getElementById('active-uom');
+            if (bar && activeEl) {
+                const scrollLeft = activeEl.offsetLeft - (bar.clientWidth / 2) + (activeEl.clientWidth / 2);
+                bar.scrollTo({ left: scrollLeft, behavior: 'smooth' });
+            }
+        }, 10);
+    }
+    
+    function scrollToTop() {
+        setTimeout(() => {
+            const list = document.getElementById('product-list');
+            if (list) {
+                list.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        }, 10);
+    }
+
+    window.selectProduct = (id) => { 
+        if (!isValidExpression(state.tempInput)) return; 
+        setActiveProduct(state.currentZoneIndex, id); 
+        render(); 
+        centerActiveUom(); 
+    };
+    
+    window.selectUom = (idx) => {
+      if (!isValidExpression(state.tempInput)) return;
+      saveCurrentInput(); 
+      
+      const prod = state.data[state.currentZoneIndex].products.find(p => p.id === state.activeProductId);
+      prod.selectedUom = idx;
+      state.tempInput = ""; 
+      render();
+      centerActiveUom();
+    };
+
+    const LONG_PRESS_MS = 500;
+    const MOVE_CANCEL_PX = 10;
+    let pressState = null;
+
+    function handlePointerDown(e, kind, index) {
+      if (state.reorder) return;
+      if (!isValidExpression(state.tempInput)) return;
+      pressState = { kind, index, fired: false, startX: e.clientX, startY: e.clientY };
+      pressState.timer = setTimeout(() => {
+        if (!pressState) return;
+        pressState.fired = true;
+        if (navigator.vibrate) navigator.vibrate(10);
+        openContextMenu(kind, index);
+      }, LONG_PRESS_MS);
+    }
+    function handlePointerMoveCheck(e) {
+      if (!pressState) return;
+      const dx = Math.abs(e.clientX - pressState.startX);
+      const dy = Math.abs(e.clientY - pressState.startY);
+      if (dx > MOVE_CANCEL_PX || dy > MOVE_CANCEL_PX) {
+        clearTimeout(pressState.timer);
+        pressState = null; 
+      }
+    }
+    function handlePointerUp(e, kind, index) {
+      if (!pressState) return;
+      clearTimeout(pressState.timer);
+      const wasLongPress = pressState.fired;
+      pressState = null;
+      if (!wasLongPress) {
+        if (kind === 'zone') selectZone(index);
+        else selectProduct(state.data[state.currentZoneIndex].products[index].id);
+      }
+    }
+    function handlePointerCancel() {
+      if (pressState) clearTimeout(pressState.timer);
+      pressState = null;
+    }
+
+    function openContextMenu(kind, index) {
+      state.contextMenu = { kind, index };
+      render();
+    }
+    function closeContextMenu() {
+      state.contextMenu = null;
+      render();
+    }
+
+    function startReorder(kind) {
+      state.contextMenu = null;
+      state.reorder = kind;
+      if (kind === 'zone') state.viewMode = 'zones';
+      render();
+    }
+    function exitReorder() {
+      state.reorder = null;
+      render();
+    }
+
+    function openChangeZoneMenu(index) {
+      state.contextMenu = { kind: 'changeZone', index };
+      render();
+    }
+    function moveProductToZone(index, targetZoneIndex) {
+        const zone = state.data[state.currentZoneIndex];
+        const [prod] = zone.products.splice(index, 1);
+        
+        state.data[targetZoneIndex].products.push(prod);
+        state.contextMenu = null;
+        setActiveProduct(targetZoneIndex, prod.id);
+        render();
+    }
+    
+    function addProduct(position, index) {
+        closeContextMenu();
+        const insertAt = position === 'before' ? index : index + 1;
+        openIngredientSearch(insertAt);
+    }
+
+    function openIngredientSearch(insertAt) {
+        if (state.reorder || !isValidExpression(state.tempInput)) return; 
+        state.ingredientSearch = { insertAt };
+        render();
+    }
+
+    function closeIngredientSearch() {
+        state.ingredientSearch = null;
+        render();
+    }
+
+    window.handleSearchInput = (val) => {
+        const query = val.toLowerCase();
+        const results = mockDatabase.filter(item => item.name.toLowerCase().includes(query));
+        const container = document.getElementById('search-results-container');
+        if (!container) return;
+
+        if (results.length === 0) {
+            container.innerHTML = `<div class="p-6 text-center text-slate-400 font-bold tracking-widest text-sm uppercase">No ingredients found</div>`;
+            return;
+        }
+
+        container.innerHTML = results.map(item => `
+            <button aria-label="Add ${escapeHtml(item.name)}" onclick="confirmAddIngredient('${escapeHtml(item.name)}')" class="w-full text-left touch-manipulation px-5 py-4 border-b border-slate-800 focus:outline-none focus:bg-slate-800 active:bg-slate-800 flex justify-between items-center transition-colors touch-pan-y">
+                <span class="text-white font-bold text-base">${escapeHtml(item.name)}</span>
+                <span class="text-slate-400 text-xs font-mono uppercase tracking-widest">${escapeHtml(item.uoms.map(u => u.n).join(', '))}</span>
+            </button>
+        `).join('');
+    };
+
+    window.confirmAddIngredient = (name) => {
+        const item = mockDatabase.find(i => i.name === name);
+        if (!item || !state.ingredientSearch) return;
+
+        const newProduct = {
+            id: Date.now(),
+            name: item.name,
+            uoms: JSON.parse(JSON.stringify(item.uoms)), 
+            selectedUom: 0
+        };
+
+        const zone = state.data[state.currentZoneIndex];
+        zone.products.splice(state.ingredientSearch.insertAt, 0, newProduct);
+
+        state.ingredientSearch = null;
+        setActiveProduct(state.currentZoneIndex, newProduct.id);
+        render();
+        
+        setTimeout(() => {
+            const el = document.getElementById('active-product');
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 50);
+    };
+    
+    function addZone(position, index) {
+        closeContextMenu();
+        showPrompt(position === 'before' ? 'New Zone (Before)' : 'New Zone (After)', '', 'Zone name', (name) => {
+            const newZone = { zoneName: name, products: [] };
+            const insertAt = position === 'before' ? index : index + 1;
+            state.data.splice(insertAt, 0, newZone);
+            setActiveProduct(insertAt, null);
+            state.viewMode = 'products';
+            render();
+        });
+    }
+
+    function showPrompt(title, value, placeholder, onConfirm) {
+      state.promptModal = { title, value, placeholder, onConfirm };
+      render();
+      setTimeout(() => { const el = document.getElementById('prompt-input'); if (el) { el.focus(); el.select(); } }, 30);
+    }
+    function closePrompt() { state.promptModal = null; render(); }
+    function confirmPrompt() {
+      const modal = state.promptModal;
+      if (!modal) return;
+      const el = document.getElementById('prompt-input');
+      const val = el ? el.value.trim() : '';
+      state.promptModal = null;
+      if (val && modal.onConfirm) { modal.onConfirm(val); }
+      else { render(); }
+    }
+
+    let dragCtx = null;
+
+    function startDrag(e, kind, index) {
+      e.preventDefault();
+      e.stopPropagation();
+      const container = document.getElementById('product-list');
+      const rowEl = e.currentTarget.closest('[data-row]');
+      const rows = Array.from(container.querySelectorAll('[data-row]'));
+      const rects = rows.map(r => r.getBoundingClientRect());
+      const stepSize = rows.length > 1 ? (rects[1].top - rects[0].top) : rowEl.offsetHeight;
+
+      dragCtx = {
+        kind, container, rows, rowEl,
+        fromIndex: index,
+        targetIndex: index,
+        stepSize: stepSize || rowEl.offsetHeight,
+        startY: e.clientY,
+        scrollAdjust: 0,
+        lastClientY: e.clientY,
+        scrollDir: 0,
+        pointerId: e.pointerId
+      };
+
+      rowEl.setPointerCapture(e.pointerId);
+      rowEl.style.zIndex = 50;
+      rowEl.style.position = 'relative';
+      rowEl.classList.add('shadow-2xl', 'opacity-95', 'ring-2', 'ring-blue-500');
+
+      dragCtx.scrollTimer = setInterval(() => {
+        if (!dragCtx || !dragCtx.scrollDir) return;
+        const before = dragCtx.container.scrollTop;
+        dragCtx.container.scrollTop += dragCtx.scrollDir * 12;
+        const actualDelta = dragCtx.container.scrollTop - before;
+        if (actualDelta !== 0) {
+          dragCtx.scrollAdjust += actualDelta;
+          updateDragVisual(dragCtx.lastClientY);
+        }
+      }, 16);
+
+      window.addEventListener('pointermove', onDragMove);
+      window.addEventListener('pointerup', onDragEnd);
+      window.addEventListener('pointercancel', onDragEnd);
+    }
+
+    function updateDragVisual(clientY) {
+      if (!dragCtx) return;
+      const deltaY = (clientY - dragCtx.startY) + dragCtx.scrollAdjust;
+      dragCtx.rowEl.style.transform = `translateY(${deltaY}px)`;
+
+      const rawSlot = dragCtx.fromIndex + Math.round(deltaY / dragCtx.stepSize);
+      dragCtx.targetIndex = Math.max(0, Math.min(dragCtx.rows.length - 1, rawSlot));
+
+      dragCtx.rows.forEach((row, i) => {
+        if (i === dragCtx.fromIndex) return;
+        let shift = 0;
+        if (dragCtx.fromIndex < dragCtx.targetIndex) {
+          if (i > dragCtx.fromIndex && i <= dragCtx.targetIndex) shift = -1;
+        } else if (dragCtx.fromIndex > dragCtx.targetIndex) {
+          if (i >= dragCtx.targetIndex && i < dragCtx.fromIndex) shift = 1;
+        }
+        row.style.transition = 'transform 150ms ease';
+        row.style.transform = shift ? `translateY(${shift * dragCtx.stepSize}px)` : '';
+      });
+    }
+
+    function onDragMove(e) {
+      if (!dragCtx) return;
+      dragCtx.lastClientY = e.clientY;
+
+      const rect = dragCtx.container.getBoundingClientRect();
+      const edge = 44;
+      if (e.clientY < rect.top + edge) dragCtx.scrollDir = -1;
+      else if (e.clientY > rect.bottom - edge) dragCtx.scrollDir = 1;
+      else dragCtx.scrollDir = 0;
+
+      updateDragVisual(e.clientY);
+    }
+
+    function onDragEnd() {
+      if (!dragCtx) return;
+      clearInterval(dragCtx.scrollTimer);
+      window.removeEventListener('pointermove', onDragMove);
+      window.removeEventListener('pointerup', onDragEnd);
+      window.removeEventListener('pointercancel', onDragEnd);
+
+      const { kind, fromIndex, targetIndex } = dragCtx;
+      dragCtx = null;
+
+      if (fromIndex !== targetIndex) {
+        if (kind === 'zone') {
+          const activeZoneRef = state.data[state.currentZoneIndex];
+          const [moved] = state.data.splice(fromIndex, 1);
+          state.data.splice(targetIndex, 0, moved);
+          state.currentZoneIndex = state.data.indexOf(activeZoneRef);
+        } else {
+          const zone = state.data[state.currentZoneIndex];
+          const [moved] = zone.products.splice(fromIndex, 1);
+          zone.products.splice(targetIndex, 0, moved);
+        }
+      }
+      render();
+    }
+
+    render();
+  </script>
+</body>
+</html>
